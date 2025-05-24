@@ -71,9 +71,6 @@
   <label>Input Text:</label>
   <textarea id="text" rows="3" placeholder="Type your message..."></textarea>
 
-  <label>Upload Raw File (binary encoded to bits):</label>
-  <input type="file" id="fileInput">
-
   <div class="row">
     <div>
       <label>CPM:</label>
@@ -100,6 +97,9 @@
     <option value="shift-dc">Shift DC Offset</option>
   </select>
 
+  <label>Upload Raw Binary File:</label>
+  <input type="file" id="fileInput" accept=".bin,.raw" />
+
   <button onclick="encodeAudio()">Encode</button>
   <button onclick="playAudio()">Play</button>
   <button onclick="stopAudio()">Stop</button>
@@ -114,33 +114,31 @@
     let context;
     let source;
     let audioReady = false;
-    let uploadedBinary = '';
+    let uploadedBinary = null;
 
     function textToBinary(text) {
       return text.split('').map(c => c.charCodeAt(0).toString(2).padStart(8, '0')).join('');
     }
 
     function encodeAudio() {
-      const text = document.getElementById('text').value.trim();
+      const textElem = document.getElementById('text');
       const cpm = parseInt(document.getElementById('cpm').value);
       const mode = document.getElementById('mode').value;
       const sampleRate = parseInt(document.getElementById('sampleRate').value);
       const statusElem = document.getElementById('statusMessage');
 
-      if (!text && !uploadedBinary) {
-        alert('Please enter text or upload a file.');
-        audioReady = false;
-        statusElem.textContent = '';
-        return;
-      }
-
-      let binary = '';
+      let text = textElem.value.trim();
+      let binary;
 
       if (uploadedBinary) {
         binary = uploadedBinary;
         statusElem.textContent = 'Using uploaded binary file.';
+      } else if (!text) {
+        alert('Please enter text or upload a binary file.');
+        audioReady = false;
+        statusElem.textContent = '';
+        return;
       } else {
-        // Detect valid binary input: only 0 or 1 chars, at least 1 char
         const isBinary = /^[01]+$/.test(text);
         binary = isBinary ? text : textToBinary(text);
         statusElem.textContent = isBinary ? 'Using raw binary input.' : 'Text converted to binary.';
@@ -157,7 +155,6 @@
         const bit = binary[i];
         const startSample = Math.floor(i * bitDuration * sampleRate);
         const endSample = Math.floor((i + 1) * bitDuration * sampleRate);
-
         for (let j = startSample; j < endSample; j++) {
           if (mode === 'psk') {
             const phase = (bit === '0') ? Math.PI : 0;
@@ -168,15 +165,14 @@
         }
       }
 
-      context = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: sampleRate });
+      context = new (window.AudioContext || window.webkitAudioContext)({ sampleRate });
       audioBuffer = context.createBuffer(1, totalSamples, sampleRate);
       audioBuffer.getChannelData(0).set(buffer);
-
       audioReady = true;
     }
 
     function playAudio() {
-      if (!audioReady || !audioBuffer || audioBuffer.length === 0) {
+      if (!audioReady || !audioBuffer) {
         alert("Encode something first.");
         return;
       }
@@ -189,7 +185,9 @@
 
     function stopAudio() {
       if (source) {
-        try { source.stop(); } catch {}
+        try {
+          source.stop();
+        } catch {}
         source.disconnect();
         source = null;
       }
@@ -211,17 +209,15 @@
     }
 
     function bufferToWav(buffer) {
-      const numOfChan = buffer.numberOfChannels,
-            length = buffer.length * numOfChan * 2 + 44,
-            bufferOut = new ArrayBuffer(length),
-            view = new DataView(bufferOut),
-            channels = [],
-            sampleRate = buffer.sampleRate,
-            bitDepth = 16;
-
+      const numOfChan = buffer.numberOfChannels;
+      const length = buffer.length * numOfChan * 2 + 44;
+      const bufferOut = new ArrayBuffer(length);
+      const view = new DataView(bufferOut);
+      const channels = [];
+      const sampleRate = buffer.sampleRate;
+      const bitDepth = 16;
       let offset = 0;
       function writeString(s) { for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i)); }
-
       writeString('RIFF'); offset += 4;
       view.setUint32(offset, 36 + buffer.length * numOfChan * 2, true); offset += 4;
       writeString('WAVE'); offset += 4;
@@ -235,9 +231,7 @@
       view.setUint16(offset, bitDepth, true); offset += 2;
       writeString('data'); offset += 4;
       view.setUint32(offset, buffer.length * numOfChan * 2, true); offset += 4;
-
       for (let i = 0; i < numOfChan; i++) channels.push(buffer.getChannelData(i));
-
       for (let i = 0; i < buffer.length; i++) {
         for (let c = 0; c < numOfChan; c++) {
           let sample = Math.max(-1, Math.min(1, channels[c][i]));
@@ -248,10 +242,10 @@
       return new Blob([bufferOut], { type: 'audio/wav' });
     }
 
-    document.getElementById('fileInput').addEventListener('change', function(event) {
-      const file = event.target.files[0];
+    // Handle file upload
+    document.getElementById('fileInput').addEventListener('change', function() {
+      const file = this.files[0];
       if (!file) return;
-
       const reader = new FileReader();
       reader.onload = function(e) {
         const bytes = new Uint8Array(e.target.result);
@@ -262,14 +256,17 @@
         uploadedBinary = bits;
         document.getElementById('output').value = bits;
         document.getElementById('statusMessage').textContent = 'File loaded as binary.';
+        encodeAudio();
       };
       reader.readAsArrayBuffer(file);
     });
 
+    // Clear uploaded binary if user types in text
     document.getElementById('text').addEventListener('input', function() {
-      uploadedBinary = '';
-      document.getElementById('output').value = '';
-      document.getElementById('statusMessage').textContent = '';
+      if (uploadedBinary) {
+        uploadedBinary = null;
+        document.getElementById('statusMessage').textContent = 'Cleared uploaded file, using text input.';
+      }
     });
   </script>
 
