@@ -1,201 +1,152 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>PSK/Shift-DC Encoder</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PSK / Shift-DC Encoder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body {
-      font-family: sans-serif;
-      padding: 10px;
-      background: #111;
-      color: #eee;
-    }
-    h1 {
-      text-align: center;
-      font-size: 1.5em;
-      margin: 10px 0;
-    }
-    label {
-      margin-top: 12px;
-      display: block;
-    }
-    input, select, textarea, button {
-      width: 100%;
-      font-size: 1em;
-      padding: 10px;
-      margin-top: 5px;
-      background: #222;
-      color: #eee;
-      border: 1px solid #444;
-      border-radius: 5px;
-      box-sizing: border-box;
-    }
-    button {
-      background: #333;
-      border: none;
-      margin-top: 10px;
-      cursor: pointer;
-    }
-    button:hover {
-      background: #444;
-    }
-    textarea {
-      resize: vertical;
-    }
+    body { font-family: sans-serif; padding: 10px; max-width: 500px; margin: auto; }
+    input, select, button, textarea { width: 100%; margin: 5px 0; padding: 8px; box-sizing: border-box; }
+    textarea { height: 80px; }
   </style>
 </head>
 <body>
+  <h2>PSK / Shift-DC Encoder</h2>
 
-<h1>PSK/Shift-DC Encoder</h1>
+  <textarea id="textInput" placeholder="Enter text or binary..."></textarea>
 
-<label>Text to Encode (binary allowed):</label>
-<textarea id="textInput" rows="4"></textarea>
+  <label>Mode:</label>
+  <select id="mode">
+    <option value="psk">PSK</option>
+    <option value="shift-dc">Shift-DC</option>
+  </select>
 
-<label>Mode:</label>
-<select id="mode">
-  <option value="psk">PSK</option>
-  <option value="shift-dc">Shift DC</option>
-</select>
+  <label>Sample Rate:</label>
+  <select id="sampleRate">
+    <option>8000</option>
+    <option>16000</option>
+    <option>32000</option>
+    <option>44100</option>
+    <option selected>48000</option>
+    <option>96000</option>
+    <option>192000</option>
+  </select>
 
-<label>Sample Rate:</label>
-<select id="sampleRate">
-  <option value="8000">8000</option>
-  <option value="16000">16000</option>
-  <option value="22050">22050</option>
-  <option value="32000">32000</option>
-  <option value="44100" selected>44100</option>
-  <option value="48000">48000</option>
-  <option value="96000">96000</option>
-  <option value="192000">192000</option>
-</select>
+  <label>Characters Per Minute (CPM):</label>
+  <input type="number" id="cpm" value="60">
 
-<label>CPM (Characters Per Minute):</label>
-<input type="number" id="cpm" value="120" min="1">
+  <label>Stereo:</label>
+  <select id="stereo">
+    <option value="false">Mono</option>
+    <option value="true">Stereo (2x speed)</option>
+  </select>
 
-<label>Stereo (2x speed):</label>
-<select id="stereo">
-  <option value="false" selected>Off</option>
-  <option value="true">On</option>
-</select>
+  <button onclick="encodeText()">Encode</button>
+  <button onclick="playAudio()">Play</button>
+  <button onclick="stopAudio()">Stop</button>
+  <button onclick="downloadWAV()">Download WAV</button>
 
-<button onclick="encodeAudio()">Encode</button>
-<button onclick="playAudio()">Play</button>
-<button onclick="stopAudio()">Stop</button>
-<button onclick="downloadWav()">Download</button>
+  <script>
+    let audioCtx, buffer, source;
 
-<script>
-let audioBuffer = null;
-let audioCtx = null;
-let source = null;
+    function encodeText() {
+      const text = document.getElementById('textInput').value;
+      if (!text) { alert("Enter some text to encode!"); return; }
 
-function encodeAudio() {
-  const text = document.getElementById('textInput').value;
-  const mode = document.getElementById('mode').value;
-  const sampleRate = parseInt(document.getElementById('sampleRate').value);
-  const cpm = parseInt(document.getElementById('cpm').value);
-  const stereo = document.getElementById('stereo').value === 'true';
-  const bitDuration = 60 / (cpm * 8);
-  const samplesPerBit = Math.floor(bitDuration * sampleRate);
+      const mode = document.getElementById('mode').value;
+      const cpm = parseInt(document.getElementById('cpm').value);
+      const sampleRate = parseInt(document.getElementById('sampleRate').value);
+      const stereo = document.getElementById('stereo').value === 'true';
+      const bitDuration = 60 / (cpm * 8);
+      const samplesPerBit = Math.floor(bitDuration * sampleRate);
 
-  let binary = /^[01]+$/.test(text) ? text : text.split('').map(c => c.charCodeAt(0).toString(2).padStart(8, '0')).join('');
+      const binary = /^[01]+$/.test(text)
+        ? text
+        : text.split('').map(c => c.charCodeAt(0).toString(2).padStart(8, '0')).join('');
 
-  const totalSamples = samplesPerBit * binary.length / (stereo ? 2 : 1);
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: sampleRate });
-  audioBuffer = audioCtx.createBuffer(stereo ? 2 : 1, totalSamples, sampleRate);
-  const left = audioBuffer.getChannelData(0);
-  const right = stereo ? audioBuffer.getChannelData(1) : null;
+      const totalSamples = samplesPerBit * binary.length;
+      const numChannels = stereo ? 2 : 1;
 
-  for (let i = 0; i < binary.length; i++) {
-    const bit = binary[i];
-    const value = (bit === '1') ? 0.5 : -0.5;
-    const start = Math.floor(samplesPerBit * (stereo ? Math.floor(i / 2) : i));
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate });
+      buffer = audioCtx.createBuffer(numChannels, totalSamples, sampleRate);
 
-    if (stereo) {
-      const channel = (i % 2 === 0) ? left : right;
-      for (let j = 0; j < samplesPerBit; j++) {
-        if (mode === 'psk') {
-          channel[start + j] = Math.sin(2 * Math.PI * 500 * (j / sampleRate)) * value;
+      let left = buffer.getChannelData(0);
+      let right = stereo ? buffer.getChannelData(1) : null;
+      let toggle = true;
+
+      for (let i = 0; i < binary.length; i++) {
+        const val = binary[i] === '1' ? 0.5 : -0.5;
+        const start = i * samplesPerBit;
+
+        if (stereo) {
+          const target = toggle ? left : right;
+          target.fill(val, start, start + samplesPerBit);
+          toggle = !toggle;
         } else {
-          channel[start + j] = value;
+          left.fill(val, start, start + samplesPerBit);
         }
       }
-    } else {
-      for (let j = 0; j < samplesPerBit; j++) {
-        if (mode === 'psk') {
-          left[start + j] = Math.sin(2 * Math.PI * 500 * (j / sampleRate)) * value;
-        } else {
-          left[start + j] = value;
+
+      alert("Encoding complete!");
+    }
+
+    function playAudio() {
+      if (!buffer) { alert("Encode something first!"); return; }
+      source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioCtx.destination);
+      source.start();
+    }
+
+    function stopAudio() {
+      if (source) source.stop();
+    }
+
+    function downloadWAV() {
+      if (!buffer) { alert("Encode something first!"); return; }
+
+      const length = buffer.length;
+      const sampleRate = buffer.sampleRate;
+      const numChannels = buffer.numberOfChannels;
+      const wavData = new DataView(new ArrayBuffer(44 + length * numChannels * 2));
+      let offset = 0;
+
+      function writeString(s) {
+        for (let i = 0; i < s.length; i++) {
+          wavData.setUint8(offset++, s.charCodeAt(i));
         }
       }
+
+      function write16(val) { wavData.setInt16(offset, val, true); offset += 2; }
+      function write32(val) { wavData.setUint32(offset, val, true); offset += 4; }
+
+      writeString("RIFF");
+      write32(36 + length * numChannels * 2);
+      writeString("WAVE");
+      writeString("fmt ");
+      write32(16);
+      write16(1);
+      write16(numChannels);
+      write32(sampleRate);
+      write32(sampleRate * numChannels * 2);
+      write16(numChannels * 2);
+      write16(16);
+      writeString("data");
+      write32(length * numChannels * 2);
+
+      for (let i = 0; i < length; i++) {
+        for (let ch = 0; ch < numChannels; ch++) {
+          let sample = buffer.getChannelData(ch)[i];
+          wavData.setInt16(offset, sample * 32767, true);
+          offset += 2;
+        }
+      }
+
+      const blob = new Blob([wavData], { type: "audio/wav" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "encoded.wav";
+      link.click();
     }
-  }
-  alert("Encoding complete.");
-}
-
-function playAudio() {
-  if (!audioBuffer) {
-    alert("Encode something first!");
-    return;
-  }
-  source = audioCtx.createBufferSource();
-  source.buffer = audioBuffer;
-  source.connect(audioCtx.destination);
-  source.start();
-}
-
-function stopAudio() {
-  if (source) source.stop();
-}
-
-function downloadWav() {
-  if (!audioBuffer) {
-    alert("Encode something first!");
-    return;
-  }
-
-  const numChannels = audioBuffer.numberOfChannels;
-  const sampleRate = audioBuffer.sampleRate;
-  const length = audioBuffer.length;
-  const wavBuffer = new ArrayBuffer(44 + length * numChannels * 2);
-  const view = new DataView(wavBuffer);
-
-  function writeString(view, offset, str) {
-    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
-  }
-
-  writeString(view, 0, 'RIFF');
-  view.setUint32(4, 36 + length * numChannels * 2, true);
-  writeString(view, 8, 'WAVE');
-  writeString(view, 12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * numChannels * 2, true);
-  view.setUint16(32, numChannels * 2, true);
-  view.setUint16(34, 16, true);
-  writeString(view, 36, 'data');
-  view.setUint32(40, length * numChannels * 2, true);
-
-  let offset = 44;
-  for (let i = 0; i < length; i++) {
-    for (let c = 0; c < numChannels; c++) {
-      let s = audioBuffer.getChannelData(c)[i];
-      s = Math.max(-1, Math.min(1, s));
-      view.setInt16(offset, s * 32767, true);
-      offset += 2;
-    }
-  }
-
-  const blob = new Blob([view], { type: 'audio/wav' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "output.wav";
-  a.click();
-  URL.revokeObjectURL(url);
-}
-</script>
-
+  </script>
 </body>
 </html>
