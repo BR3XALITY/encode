@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>PSK / DC Encoder</title>
+  <title>PSK / Shift DC Encoder</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body {
@@ -12,13 +12,12 @@
       color: #eee;
     }
     h1 {
-      font-size: 1.5em;
       text-align: center;
+      font-size: 1.5em;
       margin: 10px 0;
     }
     label {
       margin-top: 12px;
-      font-size: 1em;
       display: block;
     }
     input, select, textarea, button {
@@ -38,8 +37,8 @@
     button {
       background: #333;
       border: none;
-      cursor: pointer;
       margin-top: 10px;
+      cursor: pointer;
     }
     button:hover {
       background: #444;
@@ -104,6 +103,7 @@
     let audioBuffer;
     let context;
     let source;
+    let audioReady = false;
 
     function textToBinary(text) {
       return text.split('').map(c => c.charCodeAt(0).toString(2).padStart(8, '0')).join('');
@@ -117,6 +117,7 @@
 
       if (!text) {
         alert('Please enter text.');
+        audioReady = false;
         return;
       }
 
@@ -146,10 +147,12 @@
       context = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: sampleRate });
       audioBuffer = context.createBuffer(1, totalSamples, sampleRate);
       audioBuffer.getChannelData(0).set(buffer);
+
+      audioReady = true;
     }
 
     function playAudio() {
-      if (!audioBuffer) {
+      if (!audioReady || !audioBuffer || audioBuffer.length === 0) {
         alert("Encode something first.");
         return;
       }
@@ -169,7 +172,7 @@
     }
 
     function downloadAudio() {
-      if (!audioBuffer) {
+      if (!audioReady || !audioBuffer) {
         alert("Encode something first!");
         return;
       }
