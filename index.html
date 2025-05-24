@@ -71,6 +71,9 @@
   <label>Input Text:</label>
   <textarea id="text" rows="3" placeholder="Type your message..."></textarea>
 
+  <label>Upload Raw File (binary encoded to bits):</label>
+  <input type="file" id="fileInput">
+
   <div class="row">
     <div>
       <label>CPM:</label>
@@ -111,6 +114,7 @@
     let context;
     let source;
     let audioReady = false;
+    let uploadedBinary = '';
 
     function textToBinary(text) {
       return text.split('').map(c => c.charCodeAt(0).toString(2).padStart(8, '0')).join('');
@@ -123,20 +127,26 @@
       const sampleRate = parseInt(document.getElementById('sampleRate').value);
       const statusElem = document.getElementById('statusMessage');
 
-      if (!text) {
-        alert('Please enter text.');
+      if (!text && !uploadedBinary) {
+        alert('Please enter text or upload a file.');
         audioReady = false;
         statusElem.textContent = '';
         return;
       }
 
-      // Detect valid binary input: only 0 or 1 chars, at least 1 char
-      const isBinary = /^[01]+$/.test(text);
+      let binary = '';
 
-      const binary = isBinary ? text : textToBinary(text);
+      if (uploadedBinary) {
+        binary = uploadedBinary;
+        statusElem.textContent = 'Using uploaded binary file.';
+      } else {
+        // Detect valid binary input: only 0 or 1 chars, at least 1 char
+        const isBinary = /^[01]+$/.test(text);
+        binary = isBinary ? text : textToBinary(text);
+        statusElem.textContent = isBinary ? 'Using raw binary input.' : 'Text converted to binary.';
+      }
+
       document.getElementById('output').value = binary;
-
-      statusElem.textContent = isBinary ? 'Using raw binary input.' : 'Text converted to binary.';
 
       const bitDuration = 60 / (cpm * 8);
       const totalSamples = Math.floor(bitDuration * binary.length * sampleRate);
@@ -179,9 +189,7 @@
 
     function stopAudio() {
       if (source) {
-        try {
-          source.stop();
-        } catch {}
+        try { source.stop(); } catch {}
         source.disconnect();
         source = null;
       }
@@ -192,7 +200,6 @@
         alert("Encode something first!");
         return;
       }
-
       const wavBlob = bufferToWav(audioBuffer);
       const url = URL.createObjectURL(wavBlob);
       const a = document.createElement('a');
@@ -238,9 +245,32 @@
           offset += 2;
         }
       }
-
       return new Blob([bufferOut], { type: 'audio/wav' });
     }
+
+    document.getElementById('fileInput').addEventListener('change', function(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const bytes = new Uint8Array(e.target.result);
+        let bits = '';
+        for (let i = 0; i < bytes.length; i++) {
+          bits += bytes[i].toString(2).padStart(8, '0');
+        }
+        uploadedBinary = bits;
+        document.getElementById('output').value = bits;
+        document.getElementById('statusMessage').textContent = 'File loaded as binary.';
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    document.getElementById('text').addEventListener('input', function() {
+      uploadedBinary = '';
+      document.getElementById('output').value = '';
+      document.getElementById('statusMessage').textContent = '';
+    });
   </script>
 
 </body>
